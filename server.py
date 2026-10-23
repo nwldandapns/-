@@ -47,6 +47,20 @@ def auth(token):
     with LOCK:
         return TOKENS.get(token)
 
+def touch_player(pid):
+    if not pid:return
+    now=int(time.time())
+    with db() as c:
+        c.execute('UPDATE players SET updated_at=? WHERE player_id=?',(now,pid))
+
+def presence_for(pid,updated_at):
+    now=int(time.time())
+    room=room_for(pid)
+    if room and room.get('started',False):return '게임 중'
+    if room:return '파티 중'
+    if now-int(updated_at)<=75:return '온라인'
+    return '오프라인'
+
 
 def player_row(pid):
     with db() as c:
@@ -126,6 +140,7 @@ class Handler(BaseHTTPRequestHandler):
         if u.path=='/v1/rooms/state':
             pid=auth((q.get('token') or [''])[0])
             if not pid:return self._json(401,{'ok':False,'error':'not logged in'})
+            touch_player(pid)
             r=room_for(pid)
             if not r:return self._json(404,{'ok':False,'error':'not in room'})
             return self._json(200,{'ok':True,'room':room_public(r)})
@@ -153,8 +168,11 @@ class Handler(BaseHTTPRequestHandler):
             pid=auth((q.get('token') or [''])[0])
             if not pid:return self._json(401,{'ok':False,'error':'not logged in'})
             with db() as c:
-                rows=c.execute('''SELECT p.player_id,p.nickname,p.trophies FROM friends f JOIN players p ON p.player_id=f.b WHERE f.a=? ORDER BY p.nickname''',(pid,)).fetchall()
-            return self._json(200,{'ok':True,'friends':[dict(r) for r in rows]})
+                rows=c.execute('''SELECT p.player_id,p.nickname,p.trophies,p.updated_at FROM friends f JOIN players p ON p.player_id=f.b WHERE f.a=? ORDER BY p.nickname''',(pid,)).fetchall()
+            out=[]
+            for r in rows:
+                item=dict(r);item['status']=presence_for(item['player_id'],item.get('updated_at',0));out.append(item)
+            return self._json(200,{'ok':True,'friends':out})
         if u.path=='/v1/ranking':
             with db() as c:
                 rows=c.execute('SELECT player_id,nickname,trophies FROM players ORDER BY trophies DESC LIMIT 100').fetchall()
@@ -181,6 +199,10 @@ class Handler(BaseHTTPRequestHandler):
 
         token=str(b.get('token','')); pid=auth(token)
         if not pid:return self._json(401,{'ok':False,'error':'not logged in'})
+
+        touch_player(pid)
+        if u.path=='/v1/heartbeat':
+            return self._json(200,{'ok':True,'time':int(time.time())})
 
         if u.path=='/v1/friends/add':
             target=str(b.get('target_id','')).strip()
