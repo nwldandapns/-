@@ -163,7 +163,6 @@ class Handler(BaseHTTPRequestHandler):
                         item=dict(inv); item['from_nickname']=src.get('nickname','PLAYER'); items.append(item)
                 INVITES[pid]=items
             return self._json(200,{'ok':True,'invites':items})
-
         if u.path=='/v1/friends':
             pid=auth((q.get('token') or [''])[0])
             if not pid:return self._json(401,{'ok':False,'error':'not logged in'})
@@ -199,11 +198,9 @@ class Handler(BaseHTTPRequestHandler):
 
         token=str(b.get('token','')); pid=auth(token)
         if not pid:return self._json(401,{'ok':False,'error':'not logged in'})
-
         touch_player(pid)
         if u.path=='/v1/heartbeat':
             return self._json(200,{'ok':True,'time':int(time.time())})
-
         if u.path=='/v1/friends/add':
             target=str(b.get('target_id','')).strip()
             if target==pid:return self._json(400,{'ok':False,'error':'cannot add yourself'})
@@ -213,13 +210,11 @@ class Handler(BaseHTTPRequestHandler):
                 c.execute('INSERT OR IGNORE INTO friends(a,b,created_at) VALUES(?,?,?)',(pid,target,now))
                 c.execute('INSERT OR IGNORE INTO friends(a,b,created_at) VALUES(?,?,?)',(target,pid,now))
             return self._json(200,{'ok':True})
-
         if u.path=='/v1/friends/remove':
             target=str(b.get('target_id','')).strip()
             with db() as c:
                 c.execute('DELETE FROM friends WHERE (a=? AND b=?) OR (a=? AND b=?)',(pid,target,target,pid))
             return self._json(200,{'ok':True})
-
         if u.path=='/v1/invites/send':
             target=str(b.get('target_id',''))
             if not target or target==pid:return self._json(400,{'ok':False,'error':'invalid target'})
@@ -235,8 +230,9 @@ class Handler(BaseHTTPRequestHandler):
                     ROOMS[code]=r
             else:
                 with LOCK:
-                    r['mode']=str(b.get('mode',r.get('mode','SOLO')))
-                    r['map']=str(b.get('map',r.get('map','')))
+                    if pid==r.get('host_id'):
+                        r['mode']=str(b.get('mode',r.get('mode','SOLO')))
+                        r['map']=str(b.get('map',r.get('map','')))
                     if pid in r['members']:
                         r['members'][pid]['hero_id']=int(b.get('hero_id',r['members'][pid].get('hero_id',0)))
                         r['members'][pid]['ready']=True
@@ -246,7 +242,6 @@ class Handler(BaseHTTPRequestHandler):
                 INVITES[target]=[x for x in INVITES[target] if x.get('from_id')!=pid]
                 INVITES[target].append(inv)
             return self._json(200,{'ok':True,'room':room_public(r)})
-
         if u.path=='/v1/invites/accept':
             from_id=str(b.get('from_id',''))
             with LOCK:
@@ -264,12 +259,10 @@ class Handler(BaseHTTPRequestHandler):
                 r['members'][pid]={'hero_id':int(b.get('hero_id',0)),'ready':True,'team':-1}
                 INVITES[pid]=[x for x in INVITES.get(pid,[]) if x.get('from_id')!=from_id]
             return self._json(200,{'ok':True,'room':room_public(r)})
-
         if u.path=='/v1/invites/decline':
             from_id=str(b.get('from_id',''))
             with LOCK:INVITES[pid]=[x for x in INVITES.get(pid,[]) if x.get('from_id')!=from_id]
             return self._json(200,{'ok':True})
-
         if u.path=='/v1/rooms/create':
             old=room_for(pid)
             if old:
@@ -280,7 +273,6 @@ class Handler(BaseHTTPRequestHandler):
                 r={'code':code,'host_id':pid,'mode':str(b.get('mode','SOLO')),'map':str(b.get('map','')),'started':False,'created_at':time.time(),'match_id':'','match_started_at':0.0,'match_states':{},'members':{pid:{'hero_id':int(b.get('hero_id',0)),'ready':False,'team':-1}}}
                 ROOMS[code]=r
             return self._json(200,{'ok':True,'room':room_public(r)})
-
         if u.path=='/v1/rooms/join':
             code=str(b.get('code','')).strip().upper()
             with LOCK:r=ROOMS.get(code)
@@ -293,16 +285,33 @@ class Handler(BaseHTTPRequestHandler):
                 with LOCK:old['members'].pop(pid,None)
             with LOCK:r['members'][pid]={'hero_id':int(b.get('hero_id',0)),'ready':False,'team':-1}
             return self._json(200,{'ok':True,'room':room_public(r)})
-
+        if u.path=='/v1/rooms/config':
+            r=room_for(pid)
+            if not r:return self._json(404,{'ok':False,'error':'not in room'})
+            if pid!=r.get('host_id'):return self._json(403,{'ok':False,'error':'leader only'})
+            if r.get('started',False):return self._json(409,{'ok':False,'error':'match already started'})
+            with LOCK:
+                r['mode']=str(b.get('mode',r.get('mode','SOLO')))
+                r['map']=str(b.get('map',r.get('map','')))
+                if pid in r['members']:r['members'][pid]['hero_id']=int(b.get('hero_id',r['members'][pid].get('hero_id',0)))
+            return self._json(200,{'ok':True,'room':room_public(r)})
+        if u.path=='/v1/rooms/leader':
+            r=room_for(pid)
+            if not r:return self._json(404,{'ok':False,'error':'not in room'})
+            if pid!=r.get('host_id'):return self._json(403,{'ok':False,'error':'leader only'})
+            target=str(b.get('target_id',''))
+            if target not in r['members']:return self._json(404,{'ok':False,'error':'party member not found'})
+            with LOCK:r['host_id']=target
+            return self._json(200,{'ok':True,'room':room_public(r)})
         if u.path=='/v1/rooms/ready':
             r=room_for(pid)
             if not r:return self._json(404,{'ok':False,'error':'not in room'})
             with LOCK:r['members'][pid]['ready']=not bool(r['members'][pid].get('ready',False))
             return self._json(200,{'ok':True,'room':room_public(r)})
-
         if u.path=='/v1/rooms/start':
             r=room_for(pid)
             if not r:return self._json(404,{'ok':False,'error':'not in room'})
+            if pid!=r.get('host_id'):return self._json(403,{'ok':False,'error':'leader only'})
             mode=r.get('mode','SOLO')
             minimum=2
             if len(r['members'])<minimum:return self._json(409,{'ok':False,'error':'invite at least one friend first'})
@@ -318,7 +327,6 @@ class Handler(BaseHTTPRequestHandler):
                 r['match_started_at']=time.time()
                 r['match_states']={}
             return self._json(200,{'ok':True,'room':room_public(r)})
-
         if u.path=='/v1/match/sync':
             r=room_for(pid)
             if not r:return self._json(404,{'ok':False,'error':'not in room'})
@@ -326,37 +334,25 @@ class Handler(BaseHTTPRequestHandler):
             state=b.get('state',{}) if isinstance(b.get('state',{}),dict) else {}
             member=r['members'].get(pid,{})
             clean={
-                'player_id':pid,
-                'nickname':(player_row(pid) or {'nickname':'PLAYER'})['nickname'],
-                'hero_id':int(member.get('hero_id',0)),
-                'team':int(member.get('team',-1)),
-                'x':float(state.get('x',0.0)),
-                'z':float(state.get('z',0.0)),
-                'hp':max(0.0,float(state.get('hp',0.0))),
-                'max_hp':max(1.0,float(state.get('max_hp',1.0))),
-                'alive':bool(state.get('alive',True)),
-                'super':max(0.0,min(100.0,float(state.get('super',0.0)))),
-                'cubes':max(0,int(state.get('cubes',0))),
-                'aim_x':float(state.get('aim_x',0.0)),
-                'aim_z':float(state.get('aim_z',-1.0)),
-                'attack_seq':max(0,int(state.get('attack_seq',0))),
-                'super_seq':max(0,int(state.get('super_seq',0))),
-                'updated_at':time.time()
+                'player_id':pid,'nickname':(player_row(pid) or {'nickname':'PLAYER'})['nickname'],
+                'hero_id':int(member.get('hero_id',0)),'team':int(member.get('team',-1)),
+                'x':float(state.get('x',0.0)),'z':float(state.get('z',0.0)),
+                'hp':max(0.0,float(state.get('hp',0.0))),'max_hp':max(1.0,float(state.get('max_hp',1.0))),
+                'alive':bool(state.get('alive',True)),'super':max(0.0,min(100.0,float(state.get('super',0.0)))),
+                'cubes':max(0,int(state.get('cubes',0))),'aim_x':float(state.get('aim_x',0.0)),
+                'aim_z':float(state.get('aim_z',-1.0)),'attack_seq':max(0,int(state.get('attack_seq',0))),
+                'super_seq':max(0,int(state.get('super_seq',0))),'updated_at':time.time()
             }
             with LOCK:r['match_states'][pid]=clean
-            states=[]
-            now=time.time()
+            states=[];now=time.time()
             with LOCK:
                 for member_id,m in r['members'].items():
                     st=r['match_states'].get(member_id)
                     if st is None:
                         pr=player_row(member_id) or {'nickname':'PLAYER'}
                         st={'player_id':member_id,'nickname':pr['nickname'],'hero_id':int(m.get('hero_id',0)),'team':int(m.get('team',-1)),'x':0.0,'z':0.0,'hp':0.0,'max_hp':1.0,'alive':True,'super':0.0,'cubes':0,'aim_x':0.0,'aim_z':-1.0,'attack_seq':0,'super_seq':0,'updated_at':0.0}
-                    st=dict(st)
-                    st['stale']=bool(st.get('updated_at',0.0)>0 and now-float(st.get('updated_at',0.0))>3.0)
-                    states.append(st)
+                    st=dict(st);st['stale']=bool(st.get('updated_at',0.0)>0 and now-float(st.get('updated_at',0.0))>3.0);states.append(st)
             return self._json(200,{'ok':True,'match_id':r.get('match_id',''),'server_time':now,'players':states})
-
         if u.path=='/v1/rooms/leave':
             r=room_for(pid)
             if not r:return self._json(200,{'ok':True})
@@ -367,7 +363,6 @@ class Handler(BaseHTTPRequestHandler):
                 elif r['host_id']==pid:
                     r['host_id']=next(iter(r['members']))
             return self._json(200,{'ok':True})
-
         return self._json(404,{'ok':False,'error':'not found'})
 
 
