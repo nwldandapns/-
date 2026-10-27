@@ -1,0 +1,176 @@
+<!doctype html>
+<html lang="ko">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width,initial-scale=1,maximum-scale=1,user-scalable=no,viewport-fit=cover">
+<title>오목 랭크</title>
+<meta name="theme-color" content="#f6f1e8">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="default">
+<meta name="apple-mobile-web-app-title" content="오목 랭크">
+<link rel="manifest" href="manifest.webmanifest">
+<link rel="apple-touch-icon" href="icon.svg">
+
+<link rel="stylesheet" href="style.css">
+</head>
+<body>
+<div id="accountOverlay" class="overlay hidden">
+  <form id="accountForm" class="account-box">
+    <h2>오목 계정 만들기</h2>
+    <p>닉네임을 정하면 이 기기에 계정과 전적, 레이팅, 시즌 랭킹 기록이 저장됩니다.</p>
+    <input id="nicknameInput" maxlength="12" autocomplete="off" placeholder="닉네임 2~12자" aria-label="닉네임">
+    <div id="accountError" class="error"></div>
+    <button class="btn primary" style="width:100%">계정 생성하고 시작</button>
+  </form>
+</div>
+
+
+
+
+<div id="accountMenuModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><h2>계정 설정</h2><button id="closeAccountMenu" class="icon-btn" type="button">×</button></div>
+    <div id="accountMenuSummary" class="rank-note" style="margin-bottom:12px"></div>
+    <div class="account-actions">
+      <button id="changeNick" class="btn" type="button">닉네임 변경</button>
+      <button id="deleteAccount" class="btn" type="button">계정 초기화</button>
+    </div>
+  </div>
+</div>
+
+<div id="seasonHistoryModal" class="modal hidden"><div class="modal-box"><div class="modal-head"><h2>시즌 기록</h2><button id="closeSeasonHistory" class="icon-btn" type="button">×</button></div><div id="currentSeasonSummary" class="rank-note"></div><div id="seasonHistoryList" style="display:grid;gap:9px;margin-top:14px"></div></div></div>
+<div id="privateRoomModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><h2>사설방</h2><button id="closePrivateRoom" class="icon-btn" type="button">×</button></div>
+    <div id="privateLobbyView">
+      <button id="createRoomBtn" class="btn primary" style="width:100%">새 사설방 만들기</button>
+      <div class="field">
+        <label for="joinCodeInput">방 코드로 참가</label>
+        <input id="joinCodeInput" maxlength="6" placeholder="예: A7K3P2" autocomplete="off">
+      </div>
+      <button id="joinRoomBtn" class="btn" style="width:100%">방 참가</button>
+      <p class="rank-note" style="margin-top:12px">현재 다운로드형 버전에서는 같은 브라우저의 다른 탭끼리 BroadcastChannel로 연결해 테스트할 수 있습니다.</p>
+    </div>
+
+    <div id="roomView" class="hidden">
+      <div class="private-badge">🔒 사설방</div>
+      <div class="room-code" id="roomCodeText">------</div>
+      <div class="rank-note" id="roomStatus">상대를 기다리는 중...</div>
+      <div style="display:flex;gap:8px;flex-wrap:wrap;margin-top:12px">
+        <button id="leaveRoomBtn" class="btn">방 나가기</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="friendsModal" class="modal hidden">
+  <div class="modal-box">
+    <div class="modal-head"><h2>친구 목록</h2><button id="closeFriends" class="icon-btn" type="button">×</button></div>
+    <div class="field">
+      <label for="friendNickInput">닉네임으로 친구 추가</label>
+      <input id="friendNickInput" maxlength="12" placeholder="친구 닉네임">
+    </div>
+    <button id="addFriendBtn" class="btn primary" style="width:100%">친구 추가</button>
+    <div class="rank-note" id="friendMsg" style="margin-top:8px"></div>
+    <div style="margin-top:16px;font-weight:900">내 친구</div>
+    <div id="friendList" class="friend-list" style="margin-top:10px"></div>
+  </div>
+</div>
+
+<div class="app">
+  <div class="header">
+    <div class="brand"><h1>오목 랭크</h1><p>전통의 수읽기 · 시즌 랭킹전</p></div>
+    <div class="header-tools">
+      <div id="seasonText" class="season-pill"></div>
+    </div>
+  </div>
+
+
+  <div class="quick-menu">
+    <button id="friendsBtn" class="btn" type="button">👥 친구</button>
+    <button id="privateRoomBtn" class="btn" type="button">🔒 사설방</button>
+    <button id="seasonHistoryBtn" class="btn" type="button">📅 시즌</button>
+    <button id="accountMenuBtn" class="btn" type="button">⚙ 계정</button>
+  </div>
+
+  <div class="grid">
+    <main class="card">
+      <div class="section">
+        <div class="topbar">
+          <div>
+            <b style="font-size:20px">랭크 매칭</b>
+            <div id="status" class="status">매칭을 시작해 주세요.</div>
+            <div class="chips">
+      <span id="queueChip" class="chip">대기 중</span>
+      <span id="turnChip" class="chip">선공 미정</span>
+    </div>
+    <div class="turn-timer" id="turnTimerBox" aria-live="polite">
+      <div class="turn-timer-label" id="turnTimerLabel">남은 시간</div>
+      <div class="turn-timer-number" id="turnTimerNumber">20</div>
+      <div class="turn-timer-unit">초</div>
+    </div>
+          </div>
+          <button id="matchBtn" class="btn primary">매칭 시작</button>
+        </div>
+      </div>
+
+      <div class="section">
+        <div class="match">
+          <div class="player"><div class="avatar" id="myAvatar">나</div><div><div id="myName" class="pname">플레이어</div><div id="myMeta" class="pmeta"></div></div></div>
+          <div class="vs">VS</div>
+          <div class="player"><div class="avatar" id="oppAvatar">?</div><div><div id="oppName" class="pname">상대 대기 중</div><div id="oppMeta" class="pmeta">같은 티어대 상대를 찾습니다.</div></div></div>
+        </div>
+      </div>
+
+      <div class="board-frame"><div class="board-wrap"><div id="board" class="board"></div></div></div>
+      <div class="actions"><button id="rematchBtn" class="btn">재대국</button><button id="undoBtn" class="btn">한 수 무르기</button></div>
+    </main>
+
+    <aside class="sidebar">
+      <section class="card">
+        <div class="section">
+          <div class="rank-head">
+            <div>
+              <b style="font-size:18px">프로필</b>
+              <div class="rank-note" id="profileSummary">닉네임 · 티어</div>
+            </div>
+            <button id="profileToggle" class="btn">프로필 보기</button>
+          </div>
+          <div id="profilePanel" class="hidden" style="margin-top:14px">
+            <div class="profile">
+              <img id="tierImg" class="tier-img" alt="">
+              <div>
+                <div id="profileNick" class="tier-name" style="font-size:20px"></div>
+                <div id="tierName" class="tier-name"></div>
+                <div id="rpText" class="rp"></div>
+              </div>
+            </div>
+            <div class="stats">
+              <div class="stat"><b id="wins">0</b><span>승</span></div>
+              <div class="stat"><b id="losses">0</b><span>패</span></div>
+              <div class="stat"><b id="winrate">0%</b><span>승률</span></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="card">
+        <div class="section">
+          <div class="rank-head"><div><b style="font-size:18px">시즌 랭킹</b><div class="rank-note">TOP 500</div></div><button id="rankToggle" class="btn">랭킹 보기</button></div>
+          <div id="rankPanel" class="hidden" style="margin-top:12px">
+            <div id="myRankInfo" class="rank-note"></div>
+            <div id="rankingList" class="rank-list"></div>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<script src="tiers.js"></script>
+<script src="app.js"></script>
+
+<script src="script2.js"></script>
+
+</body>
+</html>
